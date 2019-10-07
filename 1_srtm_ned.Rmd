@@ -1,10 +1,11 @@
 ---
-title: "Topographic Change caused by People"
-author: "Matthew Ross"
+title: "Anthropogenic Topgraphic Change"
+author: "Danielle Reimanis"
 date: "9/23/2019"
 output: html_document
+editor_options: 
+  chunk_output_type: console
 ---
-
 
 # Analyzing topographic change in the USA
 
@@ -14,6 +15,7 @@ library(sf)  #Spatial datasets
 library(mapview) #interactive mapping
 library(raster) #Raster analysis
 library(elevatr) #National Elevation Dataset downloader. 
+library(ggthemes)
 
 knitr::opts_chunk$set(echo = TRUE)
 ```
@@ -29,16 +31,16 @@ Analysis background can be found here: https://www.usgs.gov/land-resources/eros/
 
 ```{r, eval=F}
 #Create a new folder 
-dir.create('data')
+#dir.create('data')
 
 #Download files
-download.file(url='https://edcintl.cr.usgs.gov/downloads/sciweb1/shared/topo/downloads/Topochange/topo_change_polygons_Shapefile.zip',destfile='data/topo_change.zip')
+#download.file(url='https://edcintl.cr.usgs.gov/downloads/sciweb1/shared/topo/downloads/Topochange/topo_change_polygons_Shapefile.zip',destfile='data/topo_change.zip')
 
 # List files in the data directory
 #list.files('data')
 
 #Unzip the dataset
-unzip('data/topo_change.zip',exdir='data/topo_change')
+#unzip('data/topo_change.zip',exdir='data/topo_change')
 
 #Check that the unzipping worked
 #list.files('data/topo_change')
@@ -111,10 +113,9 @@ mapview(az_center)
 #Get coords 
 coords <- st_coordinates(az_center)
 
-
+#pulling data from srtm site with these coords and where to store
 getData('SRTM',lon=coords[1],lat=coords[2],
-        path='data',download=TRUE)
-
+        path='data')
 
 ```
 
@@ -146,6 +147,7 @@ az_raster_before_reproj <- projectRaster(az_raster_before,
 #Trim whitespace
 az_raster_before_trim <- trim(az_raster_before_reproj) 
 
+
 #Crop to match extents
 az_raster_after_clip <- crop(az_raster_after,az_raster_before_trim)
 
@@ -171,9 +173,14 @@ plot(dem_diff)
 
 You may want to check out the command maxValue and minValue
 
+The maximum change is 38.48 meters, the minimum change is -73 meters.
+
 ```{r}
 
-#YOUR CODE HERE
+maxValue(dem_diff)
+
+minValue(dem_diff)
+
 ```
 
 
@@ -194,8 +201,7 @@ elevation change?
 
 ```{r}
 
-#Your code here
-
+az_buffer <- sf::st_buffer(az_mine, dist = 5000)
 
 ```
 
@@ -208,6 +214,8 @@ hint: you may want to explore st_crs to help you here
 
 ```{r}
 
+az_buffer_prj <- st_transform(az_buffer, st_crs(dem_diff))
+  
 ```
 
 
@@ -218,13 +226,26 @@ hint: look at the mask command and try to understand what
 the inverse option does
 
 ```{r}
-#Your code here
+
+az_mask <- raster::mask(dem_diff, az_buffer_prj, inverse=TRUE)
+
 ```
 
 
 ### 2d) Use the summary command to look at the summary of
 differences between these two DEMs in areas where there has
 been no mining
+
+Between the two elevation sets, there was a minimum error of -51.79 meters and a 
+maximum error of 33.20 meters. Considering the absolute value since these are errors, 
+the two datasets ranged at most by 51.79 meters.There was a median value of
+-1.12, but I do not know the average. 
+
+```{r}
+
+summary(az_mask)
+
+```
 
 
 ## 3) What does the shape of the "error" distribution look like
@@ -240,6 +261,9 @@ make a plot of the two dems.
 USGS az_mine dataset
 
 ```{r}
+az_mine_trans <- st_transform(az_mine, 4326)
+
+dem_diff_mine <- mask(dem_diff, az_mine_trans)
 
 ```
 
@@ -250,7 +274,9 @@ Label these vectors as `unmined_dem` and `mined_dem`.
 
 ```{r}
 
+mined_dem <- getValues(dem_diff_mine)
 
+unmined_dem <- getValues(az_mask)
 
 ```
 
@@ -258,14 +284,27 @@ Label these vectors as `unmined_dem` and `mined_dem`.
 ### 3c) Use ggplot and the command geom_density() to look at
 the differences in mined and unmined regions of Arizona.
 
+Referring to the plot below, most of the values in the unmined area are centered around 0, 
+which makes sense since it should be assumed there was little elevation change in the 
+unmined region. In juxtaposition, in the mined area, most of the values range from about
+-50 meters to -30 meters. This makes sense as well, since mining removes ground,
+decreases the elevation and hence most values were non-zero and negative. The model
+shows there was an increase in changes to the topography from the unmined area to the mined.
+
+
 ```{r}
 # Here I'm just making the table for you
 
 unmined_type <- rep('unmined',length(unmined_dem))
 mined_type <- rep('mined',length(mined_dem))
 mined_table <- tibble(dem_values = c(unmined_dem,mined_dem),
-                      type = c(unmined_type,mined_type)) 
-                      
-                    
+                      type = c(unmined_type,mined_type))%>%
+  filter(!is.na(dem_values))
+
+ggplot(mined_table, aes(dem_values, color=type))+
+  geom_density()+
+  theme_few()+
+  theme(legend.position = c(0.25, .7))
+
 ```
 
